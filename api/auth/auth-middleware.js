@@ -1,5 +1,6 @@
 const { JWT_SECRET } = require("../secrets"); // use this secret!
 const jwt = require("jsonwebtoken");
+const Users = require("../users/users-model");
 
 const restricted = (req, res, next) => {
   /*
@@ -21,14 +22,16 @@ const restricted = (req, res, next) => {
   if (token) {
     jwt.verify(token, JWT_SECRET, (err, decoded) => {
       if (err) {
-        next({ status: 401, message: "Token required" });
+        next({ status: 401, message: "Token invalid" });
       } else {
         req.decodedJwt = decoded;
+
+        console.log(req.decodedJwt);
         next();
       }
     });
   } else {
-    next({ status: 401, message: "Missing Token" });
+    next({ status: 401, message: "token required" });
   }
 };
 
@@ -44,7 +47,7 @@ const only = (role_name) => (req, res, next) => {
     Pull the decoded token from the req object, to avoid verifying it again!
   */
 
-  if (req.decodedJwt && req.decodedJwt === role_name) {
+  if (role_name === req.decodedJwt.role_name) {
     next();
   } else {
     next({
@@ -54,7 +57,7 @@ const only = (role_name) => (req, res, next) => {
   }
 };
 
-const checkUsernameExists = (req, res, next) => {
+const checkUsernameExists = async (req, res, next) => {
   /*
     If the username in req.body does NOT exist in the database
     status 401
@@ -62,13 +65,20 @@ const checkUsernameExists = (req, res, next) => {
       "message": "Invalid credentials"
     }
   */
-  if (!req.body.username) {
-    next({
-      status: 401,
-      message: "Invalid credentials",
-    });
-  } else {
-    next();
+  try {
+    const [user] = await Users.findBy({ username: req.body.username });
+
+    if (!user) {
+      next({
+        status: 401,
+        message: "Invalid credentials",
+      });
+    } else {
+      req.user = user;
+      next();
+    }
+  } catch (err) {
+    next(err);
   }
 };
 
@@ -93,9 +103,7 @@ const validateRoleName = (req, res, next) => {
   */
 
   let { role_name } = req.body;
-  if (role_name) {
-    role_name = role_name.trim();
-  } else if (!role_name || role_name.trim() === "") {
+  if (!role_name || !role_name.trim()) {
     req.body.role_name = "student";
     next();
   } else if (role_name.trim() === "admin") {
@@ -108,6 +116,9 @@ const validateRoleName = (req, res, next) => {
       status: 422,
       message: "Role name can not be longer than 32 chars",
     });
+  } else if (role_name) {
+    req.body.role_name = role_name.trim();
+    next();
   }
 };
 
